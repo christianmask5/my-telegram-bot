@@ -1,22 +1,5 @@
 {
-    "channels": {
-        "-1002280134456": {
-            "title": "SQUID GAME SAISON 1| SAISON 2 | SAISON 3",
-            "username": null,
-            "added_at": "2025-07-02T22:11:55.638187"
-        },
-        "-1002149395001": {
-            "title": "SQUID GAME S03 FULL HD",
-            "username": null,
-            "added_at": "2025-07-02T22:24:18.358373"
-        }
-    },
-    "welcome_texts": {
-        "-1002280134456": "Squid Game French \n\nTent\u00e9s par un prix all\u00e9chant en cas de victoire, des centaines de joueurs d\u00e9sargent\u00e9s acceptent de s'affronter lors de jeux pour enfants aux enjeux mortels.",
-        "-1002149395001": "Bonjour !\nBienvenue dans mon canal !"
-    },
-    "welcome_pics": {
-        "-1002280134456": "AgACAgQAAxkBAAOIaGVv-3vTbKcrLKt4VG277CKgZFMAAuHLMRu7VDFTVucLAAE3iq4sAQADAgADeQADNgQ",
-        "-1002149395001": "AgACAgQAAxkBAAIBHmhlo8k12HPMmm1R47amSA9-onktAAJXzDEbu1QxU2mCcGFDIF9WAQADAgADeAADNgQ"
-    }
+  "channels": {},
+  "welcome_texts": {},
+  "welcome_pics": {}
 }

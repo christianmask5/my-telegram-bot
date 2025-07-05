@@ -1,4 +1,3 @@
-# bot.py
 import os
 import json
 import logging
@@ -35,10 +34,14 @@ def load_config() -> Dict:
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
-                return json.load(f)
+                config = json.load(f)
+                # Conversion pour compatibilité avec ancienne version
+                if isinstance(config.get("channel"), dict):
+                    return config
+                return {"channel": None, "welcome_text": "", "welcome_pic": ""}
     except Exception as e:
         logger.error(f"Erreur chargement config: {e}")
-    return {"channels": {}, "welcome_texts": {}, "welcome_pics": {}}
+    return {"channel": None, "welcome_text": "", "welcome_pic": ""}
 
 def save_config(config: Dict) -> None:
     try:
@@ -52,63 +55,60 @@ bot_config = load_config()
 # ===============================
 # COMMANDES
 # ===============================
-from telegram.constants import ParseMode
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Désolé, vous n'êtes pas autorisé.")
         return
 
-    # Récupérer le nom du bot
     bot_info = await context.bot.get_me()
     bot_name = bot_info.first_name
 
-    # Récupérer le nom complet de l'admin humain
-    try:
-        admin_chat = await context.bot.get_chat(ADMIN_ID)
-        admin_name = admin_chat.full_name
-    except Exception as e:
-        admin_name = "l'administrateur"
-        print(f"Erreur récupération nom admin: {e}")
+    commands = [
+        "/channelinfo - Voir la configuration actuelle",
+        "/addchannel <id> - Ajouter un canal",
+        "/removechannel - Supprimer le canal configuré",
+        "/setwelcometext - Définir le message de bienvenue",
+        "/setwelcomepic - Définir la photo de bienvenue"
+    ]
 
-    # Créer le message stylé
     welcome_msg = (
-        f"Bienvenue sur ton bot 🤖 *{bot_name}* !\n\n"
-        f"👤 Administrateur : *{admin_name}*\n\n"
+        f"Bienvenue sur 🤖 *{bot_name}* !\n\n"
         "📚 *Commandes disponibles :*\n"
-        "/addchannel <id> : pour ajouter un canal\n"
-        "/listchannels : pour lister les canaux\n"
-        "/setwelcometext <id> : pour définir le message à envoyer\n"
-        "/setwelcomepic <id> : pour définir la photo à joindre au message\n\n"
-        "⚙️ *Ajoute-moi comme administrateur de ton canal pour commencer !*"
+        + "\n".join(commands) + "\n\n"
+        "⚙️ *Ajoute-moi comme administrateur de ton canal pour commencer !*\n\n"
+        #f"👨🏾‍💻 *DEV :* @christian\\{chr(95)}mask5\n\n"
     )
 
-    await update.message.reply_text(welcome_msg, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(welcome_msg, parse_mode="Markdown")
 
-
-async def list_channels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def channelinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Vous n'êtes pas autorisé.")
         return
-    if not bot_config["channels"]:
-        await update.message.reply_text("Je ne gère encore aucun canal.")
+        
+    if not bot_config["channel"]:
+        await update.message.reply_text("Aucun canal n'est configuré pour le moment.")
         return
-
-    message = "📋 Canaux gérés :\n\n"
-    for cid, info in bot_config["channels"].items():
-        message += (
-            f"• {info.get('title', 'Inconnu')}\n\n"
-            f"  ID : {cid}\n\n"
-            f"  Texte : {'✅' if cid in bot_config['welcome_texts'] else '❌'}\n\n"
-            f"  Photo : {'✅' if cid in bot_config['welcome_pics'] else '❌'}\n\n"
-        )
-    await update.message.reply_text(message)
-
+        
+    channel = bot_config["channel"]
+    message = (
+        f"📌 *Canal configuré* :\n\n"
+        f"• *Nom* : {channel.get('title', 'Inconnu')}\n\n"
+        f"      • *ID* : `{channel['id']}`\n\n"
+        f"      • *Message* : {'✅' if bot_config['welcome_text'] else '❌'}\n"
+        f"      • *Photo* : {'✅' if bot_config.get('welcome_pic') else '❌'}"
+    )
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Vous n'êtes pas autorisé.")
         return
+    
+    if bot_config["channel"]:
+        await update.message.reply_text("❌ Un canal est déjà configuré. Utilisez /removechannel pour le supprimer avant d'en ajouter un nouveau.")
+        return
+
     if not context.args:
         await update.message.reply_text("Usage: /addchannel <channel_id>")
         return
@@ -117,56 +117,74 @@ async def add_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         chat = await context.bot.get_chat(channel_id)
         bot_member = await chat.get_member(context.bot.id)
+        
         if bot_member.status not in ["administrator", "creator"]:
-            await update.message.reply_text("Je ne suis pas admin de ce canal.")
+            await update.message.reply_text("❌ Je ne suis pas admin de ce canal.")
             return
 
-        bot_config["channels"][channel_id] = {
+        bot_config["channel"] = {
+            "id": channel_id,
             "title": chat.title,
             "username": chat.username,
             "added_at": datetime.now().isoformat()
         }
         save_config(bot_config)
-        await update.message.reply_text(f"✅ Canal ajouté avec succès !\n\n"
-                                        f"{'Nom :'} {chat.title}\n\n"
-                                        f"{'ID : '} {channel_id}")
+        await update.message.reply_text(
+            f"✅ *Canal configuré avec succès !*\n\n"
+            f"*Nom* : {chat.title}\n"
+            f"*ID* : `{channel_id}`",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         logger.error(f"Erreur add_channel: {e}")
-        await update.message.reply_text(f"Erreur: {e}")
+        await update.message.reply_text(f"❌ Erreur: {e}")
+
+async def remove_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Vous n'êtes pas autorisé.")
+        return
+    
+    if not bot_config["channel"]:
+        await update.message.reply_text("ℹ️ Aucun canal n'a été configuré.")
+        return
+        
+    bot_config.update({
+        "channel": None,
+        "welcome_text": "",
+        "welcome_pic": ""
+    })
+    save_config(bot_config)
+    await update.message.reply_text("✅ Canal supprimé avec succès.")
 
 async def set_welcome_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Vous n'êtes pas autorisé.")
         return
-    if not context.args:
-        await update.message.reply_text("Usage: /setwelcometext <channel_id>")
+        
+    if not bot_config["channel"]:
+        await update.message.reply_text("❌ Aucun canal configuré. Ajoutez-en un d'abord.")
         return
 
-    channel_id = context.args[0]
-    if channel_id not in bot_config["channels"]:
-        await update.message.reply_text("Canal non géré. Faites /addchannel d'abord.")
-        return
-
-    context.user_data["setting_welcome_text_for"] = channel_id
+    context.user_data["setting_welcome_text"] = True
     await update.message.reply_text(
-        f"Envoyez maintenant le message pour {bot_config['channels'][channel_id]['title']}."
+        "📝 Envoyez maintenant le message de bienvenue :\n\n"
+        "Vous pouvez utiliser :\n"
+        "`{user}` - Insérer le nom du nouvel abonné\n"
+        "`{channel}` - Insérer le nom du canal",
+        parse_mode="Markdown"
     )
 
 async def set_welcome_pic(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Vous n'êtes pas autorisé.")
         return
-    if not context.args:
-        await update.message.reply_text("Usage: /setwelcomepic <channel_id>")
+        
+    if not bot_config["channel"]:
+        await update.message.reply_text("❌ Aucun canal configuré. Ajoutez-en un d'abord.")
         return
 
-    channel_id = context.args[0]
-    if channel_id not in bot_config["channels"]:
-        await update.message.reply_text("Canal non géré. Faites /addchannel d'abord.")
-        return
-
-    context.user_data["setting_welcome_pic_for"] = channel_id
-    await update.message.reply_text(f"Envoyez maintenant la photo pour {bot_config['channels'][channel_id]['title']}.")
+    context.user_data["setting_welcome_pic"] = True
+    await update.message.reply_text("📸 Envoyez maintenant la photo de bienvenue :")
 
 # ===============================
 # HANDLERS POUR LES DONNÉES
@@ -174,57 +192,66 @@ async def set_welcome_pic(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    data = context.user_data
-    if "setting_welcome_text_for" in data:
-        channel_id = data["setting_welcome_text_for"]
-        bot_config["welcome_texts"][channel_id] = update.message.text
+        
+    if "setting_welcome_text" in context.user_data:
+        bot_config["welcome_text"] = update.message.text
         save_config(bot_config)
-        await update.message.reply_text("✅ Message enregistré !")
-        del data["setting_welcome_text_for"]
+        await update.message.reply_text("✅ Message de bienvenue enregistré !")
+        context.user_data.pop("setting_welcome_text", None)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    data = context.user_data
-    if "setting_welcome_pic_for" in data:
-        channel_id = data["setting_welcome_pic_for"]
-        photo_file_id = update.message.photo[-1].file_id
-        bot_config["welcome_pics"][channel_id] = photo_file_id
+        
+    if "setting_welcome_pic" in context.user_data:
+        bot_config["welcome_pic"] = update.message.photo[-1].file_id
         save_config(bot_config)
-        await update.message.reply_text("✅ Photo enregistrée !")
-        del data["setting_welcome_pic_for"]
+        await update.message.reply_text("✅ Photo de bienvenue enregistrée !")
+        context.user_data.pop("setting_welcome_pic", None)
 
 # ===============================
 # CHAT JOIN REQUEST HANDLER
 # ===============================
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not bot_config["channel"]:
+        return
+        
     channel_id = str(update.chat_join_request.chat.id)
-    user = update.chat_join_request.from_user
-    logger.info(f"Nouvelle demande: {user.full_name} pour {channel_id}")
+    if channel_id != bot_config["channel"]["id"]:
+        return
 
+    user = update.chat_join_request.from_user
+    logger.info(f"Nouvelle demande de {user.full_name}")
+    
     try:
+        # 1. Approuver la demande
         await context.bot.approve_chat_join_request(
             chat_id=update.chat_join_request.chat.id,
             user_id=user.id
         )
-        await send_welcome_message(user, channel_id, context)
+        
+        # 2. Envoyer le message de bienvenue
+        if bot_config["welcome_text"]:
+            welcome_text = bot_config["welcome_text"].replace(
+                "{user}", user.full_name
+            ).replace(
+                "{channel}", bot_config["channel"]["title"]
+            )
+            
+            if bot_config.get("welcome_pic"):
+                await context.bot.send_photo(
+                    chat_id=user.id,
+                    photo=bot_config["welcome_pic"],
+                    caption=welcome_text
+                )
+            else:
+                await context.bot.send_message(
+                    chat_id=user.id,
+                    text=welcome_text
+                )
+                
     except Exception as e:
-        logger.error(f"Erreur approbation: {e}")
-
-async def send_welcome_message(user: User, channel_id: str, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        welcome_text = bot_config["welcome_texts"].get(channel_id, "")
-        welcome_pic = bot_config["welcome_pics"].get(channel_id)
-        channel_name = bot_config["channels"].get(channel_id, {}).get("title", "ton canal")
-
-        final_text = welcome_text.replace("{user}", user.full_name).replace("{channel}", channel_name)
-
-        if welcome_pic:
-            await context.bot.send_photo(chat_id=user.id, photo=welcome_pic, caption=final_text)
-        else:
-            await context.bot.send_message(chat_id=user.id, text=final_text)
-    except Exception as e:
-        logger.error(f"Erreur envoi message privé: {e}")
+        logger.error(f"Erreur traitement demande: {e}")
 
 # ===============================
 # MAIN
@@ -232,15 +259,18 @@ async def send_welcome_message(user: User, channel_id: str, context: ContextType
 if __name__ == '__main__':
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Commandes
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("listchannels", list_channels))
+    app.add_handler(CommandHandler("channelinfo", channelinfo))
     app.add_handler(CommandHandler("addchannel", add_channel))
+    app.add_handler(CommandHandler("removechannel", remove_channel))
     app.add_handler(CommandHandler("setwelcometext", set_welcome_text))
     app.add_handler(CommandHandler("setwelcomepic", set_welcome_pic))
 
+    # Handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
+    logger.info("Bot démarré...")
     app.run_polling()
